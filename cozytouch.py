@@ -17,7 +17,12 @@
 # modification : 5.35 : tatrox 06/23 : changements adresse API et lecture des données renvoyées
 # modification : 5.36 : tatrox 06/23 : ajout de vérification de version pour mettre à jour le hardware dans domoticz si c'est une version mineure
                                       #add log error level for domoticz
-                                      #changements mineurs pour la compréhension + ajout de quelques options de debug
+                                           #changements mineurs pour la compréhension + ajout de quelques options de debug
+
+# modification : 5.37 : Sirus10 29/03 : addaptation du code suite à la modifictaion des commandes domoticz build 2023.2 - CF https://www.domoticz.com/wiki/Domoticz_API/JSON_URL%27s#Warning_Beta_Build_15326.2C_1-jun-2023_.28and_newer.29
+                                     
+
+
 
 # TODO list:
 # Prise en compte du mode dérogation sur les AtlanticElectricalHeaterWithAdjustableTemperatureSetpointIOComponent
@@ -34,7 +39,7 @@ import requests, shelve, json, time, unicodedata, os, sys, errno
 Paramètres
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 '''
-version=5.36 # version=majeure.mineure : Si update de version mineure alors le hardware sera mis à jour avec la nouvelle version. Sinon création d'un nouveau hardware
+version=5.37 # version=majeure.mineure : Si update de version mineure alors le hardware sera mis à jour avec la nouvelle version. Sinon création d'un nouveau hardware
 
 debug=1 # 0 : pas de traces debug / 1 : traces requêtes http / 2 : dump data json reçues du serveur cozytouch / 4 : dump data device sauvegardés / 555 : pour lier manuellement les devices déjà existants en cas de suppresion malencontreuse du cozytouch_save mais pas des devices
 
@@ -42,8 +47,7 @@ domoticz_ip=u'192.168.xx.xx'
 domoticz_port=u'8080'
 
 login="xxxxx"
-password="xxxxx"
-
+password="xxxxx
 '''
 Commentaires
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -170,8 +174,12 @@ def domoticz_read_device_analog(idx):
     renvoie un flottant quel que soit le type de device
     '''
     idx=str(idx)
-
-    myurl=url_domoticz+'devices&rid='+idx
+    ##  Starting 2023.02 
+    ##  From  /json.htm?type=devices&filter=light&used=true&order=Name
+    ##  To : /json.htm?type=command&param=getdevices&filter=light&used=true&order=Name
+    myurl=url_domoticz+'command&param=getdevices&rid='+idx
+    if debug:
+        print ("#######  NEW URL : # " +     myurl); 
     req=requests.get(myurl)
     if debug:
         print(u'  '.join((u'GET-> ',myurl,' : ',str(req.status_code))).encode('utf-8'))
@@ -179,6 +187,7 @@ def domoticz_read_device_analog(idx):
     # Réponse HTTP 200 OK
     if req.status_code==200 :
             data=json.loads(req.text)
+            print( data)
             # Lecture de l'état du device
             # Les données sont dans un dictionnaire ( [] ) d'où le [0]
             select=float((data[u'result'][0][u'Data']))
@@ -192,8 +201,8 @@ def domoticz_read_device_switch_selector(idx):
     renvoie un entier
     '''
     idx = str(idx).decode("utf-8")
-
-    myurl=url_domoticz+u'devices&rid='+idx
+	## From Stable 2023.02
+    myurl=url_domoticz+u'command&param=getdevices&rid='+idx
     req=requests.get(myurl)
     if debug:
         print(u'  '.join((u'GET-> ',myurl,' : ',str(req.status_code))).encode('utf-8'))
@@ -351,7 +360,11 @@ def domoticz_add_virtual_device(hwidx,typ,nom,option='none'):
     if debug==555: #remplissage manuel
         deviceidx=str(input("idx manuel device "+str(nom)+" : "))
     else:
-        myurl=url_domoticz+u'createvirtualsensor&idx='+hwidx+u'&sensorname='+nom+u'+&sensortype='+typ+req_option
+        ##myurl=url_domoticz+u'createvirtualsensor&idx='+hwidx+u'&sensorname='+nom+u'+&sensortype='+typ+req_option
+	    ##domoticz_write_log('#############  DEBUG  ##########  OLD URL ' + myurl)
+        ## From Stable 2023.2: https://www.domoticz.com/wiki/Domoticz_API/JSON_URL%27s#Warning_Beta_Build_15326.2C_1-jun-2023_.28and_newer.29
+        myurl=url_domoticz+u'command&param=createvirtualsensor&idx='+hwidx+u'&sensorname='+nom+u'+&sensortype='+typ+req_option
+        		
         req=requests.get(myurl)
         if debug:
             print(u'  '.join((u'GET-> ',myurl,' : ',str(req.status_code))).encode('utf-8'))
@@ -540,7 +553,8 @@ def test_exist_cozytouch_domoticz_hw_and_backup_store():
         print("idx hardware cozytouch dans le fichier de sauvegarde de la configuration : "+str(save_idx))
 
         # Test si le virtual hardware existe avec le même numéro dans domoticz
-        myurl='http://'+domoticz_ip+':'+domoticz_port+'/json.htm?type=hardware'
+		## FROM Stable 2023.02
+        myurl='http://'+domoticz_ip+':'+domoticz_port+'/json.htm?type=command&param=gethardware'
         req=requests.get(myurl) # renvoie la liste du hardware domoticz
         if debug:
             print(u'  '.join((u'GET-> ',myurl,' : ',str(req.status_code))).encode('utf-8'))
@@ -1679,6 +1693,7 @@ def maj_device(data,name,p,x):
         # Gestion du sélecteur :
         # Voir comment gérer la demande de passage en mode auto, il faut adresser une commande "setHeatingCoolingAutoSwitch" au changement du label u'auto'
         # BLOC MODIFIE POUR ENVOI D ELA COMMANDE SETHEATINGCOLLINGAUTOSWITCH MAIS IL FAUT ENVOYER UN 'ON' OU UN 'OFF' PAS LE LABEL 40 'AUTO'
+		## REMOVED SIRUS 
         gestion_switch_selector_domoticz (mode_PAC,classe.get(u'url'),classe.get(u'nom'),classe.get(u'idx_switch_mode'),
                                                      level_0='stop',level_10='heating',level_20='cooling',level_30='drying',level_40='auto',setting_command_mode='setPassAPCOperatingMode',
                                                      special_level = 'auto',special_setting='setHeatingCoolingAutoSwitch',special_setting_parameter_on='on',special_setting_parameter_off='off')
